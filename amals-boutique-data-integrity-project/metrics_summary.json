@@ -1,0 +1,39 @@
+{
+  "total_raw_records": 21880,
+  "records_per_source": {
+    "legacy_pos": 7588,
+    "supplier_feed": 6843,
+    "ecom_export": 7449
+  },
+  "before_audit": {
+    "pos_missing_supplier": 421,
+    "pos_unrecognized_supplier": 4842,
+    "pos_invalid_category": 5998,
+    "pos_nonnumeric_price": 3089,
+    "pos_negative_stock": 67,
+    "pos_exact_duplicates": 377,
+    "supplier_feed_missing_supplier": 189,
+    "supplier_feed_foreign_currency": 876,
+    "ecom_orphaned_copies": 406
+  },
+  "before_flagged_total": 16265,
+  "merge_conflict_stats": {
+    "groups_total": 7986,
+    "price_conflicts_resolved": 3656,
+    "stock_conflicts_resolved": 3450,
+    "category_conflicts_resolved": 0,
+    "supplier_conflicts_resolved": 0,
+    "still_unresolved_after_merge": 952
+  },
+  "after_audit": {
+    "master_rows": 7986,
+    "master_missing_category": 617,
+    "master_missing_supplier": 510,
+    "master_missing_price": 0,
+    "master_missing_stock": 380,
+    "master_duplicate_keys": 0,
+    "master_records_with_any_issue": 952
+  },
+  "discrepancy_reduction_pct": 94.1,
+  "master_catalog_rows": 7986
+}
