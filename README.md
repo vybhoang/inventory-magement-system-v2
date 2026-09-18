@@ -4,6 +4,12 @@ A single-page admin dashboard for a small clothing boutique: products, suppliers
 
 This started as a rebuild of a PHP/MySQL inventory management system and was redesigned as a self-contained static app: no server, no database setup, just open `index.html`.
 
+## Live demo
+
+**[inventory-magement-system-v2.vercel.app](https://inventory-magement-system-v2.vercel.app/)**
+
+Sign in with any email/password combination (see "Running it" below). Deployed on Vercel, auto-redeploying on every push to `main`.
+
 ## Features
 
 - **Products**: add, edit, delete products across 6 categories and standard sizes (XS-XXL)
