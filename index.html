@@ -277,7 +277,7 @@ table.dataTable tbody tr.rowLow{background:var(--warning-soft);}
 </div>
 <div id="toastWrap"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function(){
@@ -1300,29 +1300,76 @@ function getFlaggedRows(){
     .filter(x=> x.r[6]===1 && !state.resolvedFlagged.includes(x.i));
 }
 
+function computeLiveCatalogHealth(){
+  const supplierIds = new Set(state.suppliers.map(s=>s.id));
+  const seen = new Map();
+  let missingCategory=0, missingSupplier=0, missingPrice=0, missingStock=0, duplicates=0;
+  const flaggedIds = new Set();
+  state.products.forEach(p=>{
+    const badCategory = !p.category || !CATEGORIES.includes(p.category);
+    const badSupplier = !p.suppliers || !p.suppliers.length || !p.suppliers.some(id=>supplierIds.has(id));
+    const badPrice = p.price==null || isNaN(p.price) || p.price<=0;
+    const badStock = p.stock==null || isNaN(p.stock) || p.stock<0;
+    if(badCategory) missingCategory++;
+    if(badSupplier) missingSupplier++;
+    if(badPrice) missingPrice++;
+    if(badStock) missingStock++;
+    const key = `${(p.name||"").toLowerCase()}|${p.size||""}|${(p.suppliers&&p.suppliers[0])||""}`;
+    if(seen.has(key)) duplicates++; else seen.set(key,true);
+    if(badCategory||badSupplier||badPrice||badStock) flaggedIds.add(p.id);
+  });
+  const total = state.products.length;
+  const issueCount = flaggedIds.size;
+  const healthPct = total ? (((total-issueCount)/total)*100).toFixed(1) : "100.0";
+  return { total, missingCategory, missingSupplier, missingPrice, missingStock, duplicates, issueCount, healthPct };
+}
+
+function recordHealthSnapshot(result){
+  let history = [];
+  try{ history = JSON.parse(localStorage.getItem("amals_healthHistory")||"[]"); }catch(e){ history = []; }
+  const today = new Date().toISOString().slice(0,10);
+  const entry = { date: today, healthPct: Number(result.healthPct), total: result.total, issues: result.issueCount };
+  if(history.length && history[history.length-1].date===today){ history[history.length-1] = entry; }
+  else { history.push(entry); }
+  if(history.length>60) history = history.slice(-60);
+  try{ localStorage.setItem("amals_healthHistory", JSON.stringify(history)); }catch(e){}
+  return history;
+}
+
 function renderDataInsights(){
-  const flaggedNow = getFlaggedRows().length;
-  const liveCount = 7034 + state.resolvedFlagged.length;
-  const totalCatalog = 7986;
-  const healthPct = ((liveCount/totalCatalog)*100).toFixed(1);
+  const live = computeLiveCatalogHealth();
+  const healthHistory = recordHealthSnapshot(live);
   $("#pageContent").innerHTML = `
     <div class="pageHead"><div><h1>${icon("insights",18)} Catalog Health</h1></div></div>
     <div class="split">
       <div class="card">
-        <div class="cardHead"><h3>Initial cleanup results</h3></div>
-        <div class="cardBody"><img src="${DATA_INSIGHTS_CHART}" alt="Bar chart showing data integrity issues before and after consolidation" style="max-width:100%;border-radius:4px;"></div>
+        <div class="cardHead"><h3>Initial cleanup results</h3><span class="tag">One-time migration</span></div>
+        <div class="cardBody">
+          <p class="helpText" style="margin:0 0 10px;">A one-time snapshot from consolidating 3 legacy sources into this catalog. This won't change &mdash; it's kept as a record of the original cleanup.</p>
+          <img src="${DATA_INSIGHTS_CHART}" alt="Bar chart showing data integrity issues before and after consolidation" style="max-width:100%;border-radius:4px;">
+        </div>
       </div>
       <div class="card">
-        <div class="cardHead"><h3>Catalog health right now</h3><span class="tag">${totalCatalog.toLocaleString()} records</span></div>
+        <div class="cardHead"><h3>Live catalog health</h3><span class="tag">${live.total.toLocaleString()} products</span></div>
         <div class="cardBody">
+          <p class="helpText" style="margin:0 0 10px;">Recalculated every time you open this page, from every product currently in your catalog &mdash; including anything added since the migration.</p>
           <div style="position:relative;height:200px;width:100%;">
             <canvas id="healthChart"></canvas>
           </div>
           <div style="display:flex;justify-content:center;gap:22px;margin-top:14px;font-size:12.5px;">
-            <div><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--success);margin-right:6px;"></span>Verified &amp; live &mdash; <b>${liveCount.toLocaleString()}</b></div>
-            <div><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--secondary);margin-right:6px;"></span>Needs review &mdash; <b>${flaggedNow.toLocaleString()}</b></div>
+            <div><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--success);margin-right:6px;"></span>Healthy &mdash; <b>${(live.total-live.issueCount).toLocaleString()}</b></div>
+            <div><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--secondary);margin-right:6px;"></span>Flagged &mdash; <b>${live.issueCount.toLocaleString()}</b></div>
           </div>
         </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="cardHead"><h3>Catalog health over time</h3><span class="tag">${healthHistory.length} snapshot${healthHistory.length===1?"":"s"}</span></div>
+      <div class="cardBody">
+        ${healthHistory.length>1 ? `
+        <div style="position:relative;height:220px;width:100%;">
+          <canvas id="healthTrendChart"></canvas>
+        </div>` : `<div class="emptyState">This chart builds up a history point each day you open Catalog Health. Come back after adding or fixing products to see the trend.</div>`}
       </div>
     </div>
     <div class="card" style="margin-top:16px;">
@@ -1350,7 +1397,7 @@ function renderDataInsights(){
     </div>
 
     <div class="card" style="margin-top:16px;">
-      <div class="cardHead"><h3>Records still needing review</h3><span class="tag" id="mcCount"></span></div>
+      <div class="cardHead"><h3>Migration backlog still needing review</h3><span class="tag" id="mcCount"></span></div>
       <div class="cardBody" style="padding-top:12px;">
         <p class="helpText" style="margin:0 0 12px;">Search, filter, or sort to find a record, then fix it right here to add it straight into <a data-goto="products" style="font-weight:700;text-decoration:underline;">Products</a>.</p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
@@ -1417,7 +1464,7 @@ function renderDataInsights(){
   if(healthCtx && window.Chart){
     new Chart(healthCtx, {
       type: "doughnut",
-      data: { labels:["Verified & live","Needs review"], datasets:[{ data:[liveCount, flaggedNow], backgroundColor:["#27AE60","#A65D6E"], borderWidth:0 }] },
+      data: { labels:["Healthy","Flagged"], datasets:[{ data:[live.total-live.issueCount, live.issueCount], backgroundColor:["#27AE60","#A65D6E"], borderWidth:0 }] },
       options: { responsive:true, maintainAspectRatio:false, cutout:"72%",
         plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=> `${c.label}: ${c.raw.toLocaleString()}`}} } },
       plugins: [{
@@ -1427,12 +1474,33 @@ function renderDataInsights(){
           ctx.save();
           ctx.textAlign="center"; ctx.textBaseline="middle";
           ctx.font="700 24px sans-serif"; ctx.fillStyle="#27AE60";
-          ctx.fillText(healthPct+"%", left+width/2, top+height/2-8);
+          ctx.fillText(live.healthPct+"%", left+width/2, top+height/2-8);
           ctx.font="11px sans-serif"; ctx.fillStyle="#95A5A6";
-          ctx.fillText("verified", left+width/2, top+height/2+13);
+          ctx.fillText("healthy", left+width/2, top+height/2+13);
           ctx.restore();
         }
       }]
+    });
+  }
+
+  const trendCtx = document.getElementById("healthTrendChart");
+  if(trendCtx && window.Chart && healthHistory.length>1){
+    new Chart(trendCtx, {
+      type: "line",
+      data: {
+        labels: healthHistory.map(h=>h.date),
+        datasets: [{
+          label: "Catalog health %",
+          data: healthHistory.map(h=>h.healthPct),
+          borderColor: "#33433C", backgroundColor: "rgba(51,67,60,0.08)",
+          fill: true, tension: 0.25, pointRadius: 3, pointBackgroundColor: "#33433C"
+        }]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>`${c.raw}% healthy`}} },
+        scales:{ y:{ min:0, max:100, ticks:{ callback:v=>v+"%" }, grid:{color:"#EEF0EE"} }, x:{ grid:{display:false} } }
+      }
     });
   }
 
@@ -1658,6 +1726,21 @@ $("#langPicker").addEventListener("change", e=>{
   if(state.currentUser){ renderShellForUser(); navigate(state.view); }
 });
 applyStaticTranslations();
+
+/* ---------------- Auto sign-in (login wall removed) ----------------
+   Skips the login screen entirely on load, signed in as the store owner.
+   The login screen and Logout button still work underneath if you ever
+   want to demo that flow again. */
+(function autoSignIn(){
+  const defaultUser = state.users.find(u=>u.email==="amal@amalsboutique.com") || state.users[0];
+  if(defaultUser){
+    state.currentUser = defaultUser;
+    $("#loginScreen").style.display="none";
+    $("#app").style.display="block";
+    renderShellForUser();
+    navigate("dashboard");
+  }
+})();
 
 /* ---------------- Global search ---------------- */
 $("#globalSearch").addEventListener("keydown", e=>{ if(e.key==="Enter"){ navigate("products"); } });
